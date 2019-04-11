@@ -1,0 +1,677 @@
+// KQL Sample code - Step 2
+ 
+// This Sample Code is provided for the purpose of illustration only and is not intended to be used in a production environment.  
+// THIS SAMPLE CODE AND ANY RELATED INFORMATION ARE PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A PARTICULAR PURPOSE.  
+// We grant You a nonexclusive, royalty-free right to use and modify the 
+// Sample Code and to reproduce and distribute the object code form of the Sample Code, provided that You agree: (i) to not use Our name, logo, or trademarks to market Your software product in which the Sample Code is embedded; 
+// (ii) to include a valid copyright notice on Your software product in which the Sample Code is 
+// embedded; and 
+// (iii) to indemnify, hold harmless, and defend Us and Our suppliers from and against any claims or lawsuits, including attorneys’ fees, that arise or result from the use or distribution of the Sample Code.
+// Please note: None of the conditions outlined in the disclaimer above will supercede the terms and conditions contained within the Premier Customer Services Description.
+// 
+
+
+// print can be used to display output to the result grid. It is primarily
+// a debugging tool. You can use it for static text
+print "Hello World";
+
+
+// Easy calculator
+print 1024 * 1024;
+
+
+// You can also name the output column
+print OneThousandGigs = 1024 * 1024;
+
+// Returns the current date/time
+print now();
+
+// now is used mostly in datetime math, which is in a later demo in this module
+
+
+//------------------------------------------------------------------------------
+// ago
+//------------------------------------------------------------------------------
+
+// ago returns a time in the past, using the current time as a starting point
+// You can use:
+//           d - days
+//           h - hours
+//           m - minutes
+//           s - seconds
+//          ms - milliseconds
+// microsecond - microseconds
+//        tick - nanosecond
+
+print ago(1d);          // days
+
+print ago(1h);           // hours
+
+print ago(1m);           // minutes
+
+print ago(1s);           // seconds 
+
+print ago(1ms);          // millisecond
+
+print ago(1microsecond); // microsecond
+
+print ago(1tick);        // nanosecond
+
+
+// You can use values other than 1
+print ago(365d); // days
+
+print ago(12h);  // hours
+
+print ago(10m);  // minutes
+
+print ago(90s);  // seconds
+
+
+// Use negative values to go into the future
+print ago(-1d);       // tomorrow
+
+print ago(-365d);     // 1 year in the future
+
+print ago(-1h);       // an hour from now
+
+
+
+
+// sort will sort the output of a query
+// similar to order by in SQL
+StormEvents
+| summarize ["Average Deaths in State"] =avg(DeathsDirect) by  ["Event Type"] =EventType, State 
+| where ['Average Deaths in State'] > 0
+| sort by ['Average Deaths in State'] ;
+
+// desc is default so must specify if ascending is desired
+StormEvents
+| summarize ["Average Deaths in State"] =avg(DeathsDirect) by  ["Event Type"] =EventType, State 
+| where ['Average Deaths in State'] > 0
+| sort by ['Average Deaths in State']  asc;
+
+
+// combine asc and desc
+// desc is default so must specify if ascending is desired
+StormEvents
+| summarize ["Average Deaths in State"] =avg(DeathsDirect) by  ["Event Type"] =EventType, State 
+| where ['Average Deaths in State'] > 0
+| sort by State asc, ["Event Type"]  asc, ['Average Deaths in State'] ;
+
+
+// Order and sort are aliases for each other
+StormEvents
+| summarize ["Average Deaths in State"] =avg(DeathsDirect) by  ["Event Type"] =EventType, State 
+| where ['Average Deaths in State'] > 0
+| order by State asc, ["Event Type"]  asc, ['Average Deaths in State'] ;
+
+// matches regex
+// http://regexlib.com/CheatSheet.aspx?AspxAutoDetectCookieSupport=1
+// Officially supported re2 syntax
+// https://github.com/google/re2/wiki/Syntax
+StormEvents 
+| where State matches regex "NEW"
+| order by State ;
+
+//Extract allows us to get a match for a regex from a string
+StormEvents
+| where EventType == "Thunderstorm Wind"
+| project extract("storm.+",0, EpisodeNarrative);
+
+
+// When the second param is 1, it returns just the part in the parenthesis
+StormEvents
+| where EventType == "Thunderstorm Wind"
+| project extract("(storm)",1, EpisodeNarrative);
+
+StormEvents
+| where EventType == "Thunderstorm Wind"
+| project Narrative = extract("(storm.+)",1, EpisodeNarrative);
+
+
+// Parse
+// Here is a subset of the data stored in the RenderedDescription column for 
+// one row, just so you can see what we are trying to parse
+
+//Event code: 3005  Event message: An unhandled exception has occurred.  Event time: 4/1/2018 11:44:43 PM  Event time (UTC): 4/1/2018 11:44:43 PM  Event ID: b8eea7d21d044fa8a0a774392f1f5b24  Event sequence: 5892  Event occurrence: 217  Event detail code: 0    Application information:      Application domain: /LM/W3SVC/2/ROOT-2-131670348328019759      Trust level: Full      Application Virtual Path: /      Application Path: C:\inetpub\ContosoRetail\      Machine name: CONTOSOWEB1    Process information:      Process ID: 13200      Process name: w3wp.exe      Account name: IIS APPPOOL\ContosoRetail    Exception information:      Exception type: FormatException        
+// ... more data followed
+
+// Think of parse as telling KQL where it place the cursor for reading text.
+
+// Starting with just a string of text, "Event code: ", tells it to skip over 
+// that text and start reading at the first character after it.
+
+// next, it will read from that position and go until it finds the phrase
+// " Event message: ". All of that text will be put in the myEventCode variable. 
+
+// The cursor is now positioned after Event message:, so it will read from 
+// there until it finds " Event time: ". That text will be stored inside
+// myEventMessage. 
+
+// An * means either read until the next string, or read until end of string. 
+// We didn't provide a column though for it to go in, so this will read 
+// to the end then just throw it away as we don't need it. 
+
+// for right now ignore the datatable stuff this is a chicken and the egg situation. Without connecting to live Log Analytics this type of sample is tough to do
+let myEvent = datatable(padding:string,Event:string )["dummy","Event code: 3005  Event message: An unhandled exception has occurred.  Event time: 4/1/2018 11:44:43 PM  Event time (UTC): 4/1/2018 11:44:43 PM  Event ID: b8eea7d21d044fa8a0a774392f1f5b24  Event sequence: 5892  Event occurrence: 217  Event detail code: 0    Application information:      Application domain: /LM/W3SVC/2/ROOT-2-131670348328019759      Trust level: Full      Application Virtual Path: /      Application Path: C:\\inetpub\\ContosoRetail\\      Machine name: CONTOSOWEB1    Process information:      Process ID: 13200      Process name: w3wp.exe      Account name: IIS APPPOOL\\ContosoRetail    Exception information:      Exception type: FormatException"];
+myEvent
+| where Event startswith "Event code:" 
+| parse Event with "Event code: " myEventCode 
+                   " Event message: " myEventMessage 
+                   " Event time: " myEventTime 
+                   " Event time (UTC): " myEventTimeUTC 
+                   " Event ID: " myEventID 
+                   " Event sequence: " myEventSequence
+                   " Event occurrence: " *
+| project myEventCode 
+        , myEventMessage 
+        , myEventTime 
+        , myEventTimeUTC 
+        , myEventID 
+        , myEventSequence; 
+
+
+// Datetime / timespan arithmetic
+// Determine how long ago an event was generated
+StormEvents
+| where State contains "NEW"
+| where DamageCrops >0
+| take 100
+| extend HowLongAgo = (now() -StartTime )
+| project State,DamageCrops,StartTime  ,HowLongAgo ;
+
+// Determine how long ago an event was generated
+// Here we divide by 1 hour to convert the output to hours
+// (Also note the need to extend twice to use a calculated value
+//  within another calculation)
+// To convert a timespan into a specific unit, divide by it
+
+StormEvents
+| where State contains "NEW"
+| where DamageCrops >0
+| take 100
+| extend HowLongAgo = (now() -StartTime )
+| extend HowManyHoursAgo =(HowLongAgo /1h)
+| extend HowManyYearsAgo = (HowLongAgo/365d)
+| project State,DamageCrops,StartTime  ,HowLongAgo,HowManyHoursAgo, HowManyYearsAgo  ;
+
+// Get the amount of time used
+StormEvents 
+| extend Duration=( EndTime - StartTime )
+| project EventId 
+        , EventType 
+        , StartTime 
+        , EndTime 
+        , Duration; 
+
+
+
+// StartOf...
+// It can often be useful to know the "Start of", such as the start of the day,
+// week, month, or year
+StormEvents 
+| take 50
+| extend DayGenerated = startofday(StartTime)
+| project EventType 
+        , StartTime  
+        , DayGenerated ;
+
+
+// Most often this would be used to get counts per time frame
+StormEvents 
+| take 50
+| extend DayGenerated = startofday(StartTime)
+| project EventType 
+        , StartTime  
+        , DayGenerated 
+| summarize EventCount=count() 
+         by DayGenerated;
+
+
+
+// This could be done at other levels, such as month
+StormEvents 
+| extend MonthGenerated = startofmonth(StartTime)
+| project EventType 
+        , StartTime  
+        , MonthGenerated 
+| summarize EventCount=count() 
+         by MonthGenerated ;
+
+StormEvents 
+| extend MonthGenerated = startofmonth(StartTime)
+| project EventType 
+        , StartTime  
+        , MonthGenerated 
+| summarize EventCount=count() 
+         by MonthGenerated 
+| render timechart          ;
+
+// You can make this easier to read with the addition of the sort operator
+// Most common you'd sort dates in desc order text in asc order
+StormEvents 
+| extend MonthGenerated = startofmonth(StartTime)
+| project EventType 
+        , StartTime  
+        , MonthGenerated 
+| summarize EventCount=count() 
+         by MonthGenerated
+| sort by MonthGenerated desc ;
+
+
+
+// Functions also exist for Year and Week
+StormEvents 
+| extend YearGenerated = startofyear(StartTime)
+| project EventType 
+        , StartTime  
+        , YearGenerated 
+| summarize EventCount=count() 
+         by YearGenerated
+| sort by YearGenerated desc ;
+
+StormEvents 
+| extend WeekGenerated = startofweek(StartTime)
+| project EventType 
+        , StartTime  
+        , WeekGenerated 
+| summarize EventCount=count() 
+         by WeekGenerated 
+| sort by WeekGenerated desc ;
+
+//Big sneak peak
+StormEvents 
+| extend WeekGenerated = startofweek(StartTime)
+| project EventType 
+        , StartTime  
+        , WeekGenerated 
+| summarize EventCount=count() 
+         by WeekGenerated 
+| sort by WeekGenerated desc
+| render columnchart  ;
+
+
+// EndOf...
+// Just like startof, there are corresponding functions for the end of a 
+// time period.
+StormEvents 
+|take 50
+| extend DayGenerated = endofday(StartTime)
+| project EventType 
+        , StartTime  
+        , DayGenerated 
+| summarize EventCount=count() 
+         by DayGenerated;
+
+
+// Week
+StormEvents 
+| extend MonthGenerated = endofweek(StartTime)
+| project EventType 
+        , StartTime  
+        , MonthGenerated 
+| summarize EventCount=count() 
+         by MonthGenerated
+| sort by MonthGenerated desc ;
+
+
+// Month
+StormEvents 
+| extend MonthGenerated = endofmonth(StartTime)
+| project EventType 
+        , StartTime  
+        , MonthGenerated 
+| summarize EventCount=count() 
+         by MonthGenerated
+| sort by MonthGenerated desc ;
+
+
+// Year
+StormEvents 
+| extend YearGenerated = endofyear(StartTime)
+| project EventType 
+        , StartTime  
+        , YearGenerated 
+| summarize EventCount=count() 
+         by YearGenerated
+| sort by YearGenerated desc ;
+
+
+
+// Between
+// Between is used to get a range of numeric values. 
+StormEvents 
+|where DamageProperty between (30000 .. 450000)
+|order by DamageProperty desc;
+
+
+// Between can also be used with dates
+StormEvents 
+|where StartTime  between (datetime(2007-12-01) .. datetime(2007-12-31))
+|order by DamageProperty desc;
+
+// There's also a "NOT" version
+StormEvents 
+|where DamageProperty !between (30000 .. 450000)
+|order by DamageProperty desc;
+
+// in and !in
+StormEvents 
+| where State in ("FLORIDA", "GEORGIA", "NEW YORK") 
+| count;
+
+StormEvents 
+| where State !in ("FLORIDA", "GEORGIA", "NEW YORK") 
+| count;
+
+
+// todynamic
+// Takes json stored in a string and lets you can address its indivdual values
+
+// After converting it dynamically, use the key in [] to get the value
+StormEvents
+| take 10
+| extend SummaryInfo = todynamic(StormSummary )
+| project EventId ,EventType 
+        , SummaryInfo["TotalDamages"]
+        , SummaryInfo ["StartTime"]
+        , SummaryInfo ["EndTime"]
+        , SummaryInfo ["Details"];
+        
+// You can also use column renaming to give them decent column names
+StormEvents
+| take 10
+| extend SummaryInfo = todynamic(StormSummary )
+| project EventId ,EventType 
+        , ["Total Damages"]=SummaryInfo["TotalDamages"]
+        , ["Start Of Incident"]=SummaryInfo ["StartTime"]
+        , ["End of Incident"]=SummaryInfo ["EndTime"]
+        , ["More Details"]=SummaryInfo ["Details"];
+
+
+// If the key name in json doesn't have spaces, you can use property notation
+// instead of array notation
+StormEvents
+| take 10
+| extend SummaryInfo = todynamic(StormSummary )
+| project EventId ,EventType 
+        , ["Total Damages"]=SummaryInfo.TotalDamages
+        , ["Start Of Incident"]=SummaryInfo.StartTime
+        , ["End of Incident"]=SummaryInfo.EndTime
+        , ["More Details"]=SummaryInfo.Details;
+
+
+// multilevel notation is supported, such as: ExtProps.Level1.Level2
+StormEvents
+| take 10
+| extend SummaryInfo = todynamic(StormSummary )
+| project EventId ,EventType 
+        , Description=SummaryInfo.Details.Description
+        , Location=SummaryInfo.Details.Location
+        , ["Total Damages"]=SummaryInfo.TotalDamages
+        , ["Start Of Incident"]=SummaryInfo.StartTime
+        , ["End of Incident"]=SummaryInfo.EndTime
+        , ["More Details"]=SummaryInfo.Details;
+
+// format_datetime / format_timespan
+// format_datetime allows you to return specific date formats
+StormEvents 
+| take 100                       // done just to give us a small dataset to demo
+| project StartTime 
+        , ["y-M-d"] =format_datetime(StartTime, "y-M-d")
+        , ["yyyy-MM-dd"]=format_datetime(StartTime, "yyyy-MM-dd")
+        , ["MM/dd/yyyy"]=format_datetime(StartTime, "MM/dd/yyyy")
+        , ["MM/dd/yyyy hh:mm:ss tt"]=format_datetime(StartTime, "MM/dd/yyyy hh:mm:ss tt")
+        , ["MM/dd/yyyy HH:mm:ss"]=format_datetime(StartTime, "MM/dd/yyyy HH:mm:ss")
+        , ["MM/dd/yyyy HH:mm:ss.ffff"]=format_datetime(StartTime, "MM/dd/yyyy HH:mm:ss.ffff");
+        
+// Supported syntax - one letter is single number, two letters two numbers
+//    d - Day, 1 to 31
+//   dd - Day, 01 to 31
+//    M - Month, 1 to 12
+//   MM - Month, 01 to 12
+//    y - Year, 0 to 9999
+//   yy - Year, 00 to 9999
+// yyyy - Year, 0000 to 9999
+
+// Hours and subsceonds can also be used with format_timespan (see below)
+//  h - Hour, 1 to 12
+// hh - Hour, 01 to 12
+//  H - Hour, 1 to 23
+// HH - Hour, 01 to 23
+//  m - Minute, 0 to 59
+// mm - Minute, 00 to 59
+//  s - Second, 0 to 59
+// ss - Second, 00 to 59
+// tt - am/pm
+
+// f/F can also be used for subseconds. Lowercase f will always display a 0,
+// uppercase F's will only display a number if there's a subsecond value. 
+// Otherwise nothing is displayed. 
+// The Number of f's indicates the precesion down to millionth's of a second
+
+
+// You can use these as separators:
+// / - : , . _ [ ] and a space
+
+// format_timespan formats a timespan. 
+// To use a datetime you have to convert it to a timespan using totimespan()
+StormEvents 
+| take 100                       // done just to give us a small dataset to demo
+| project StartTime 
+        , format_timespan(totimespan(StartTime ), "hh:mm:ss");
+
+
+// Timespans are typically the result of datetime math
+StormEvents
+| take 100
+| extend TimeGen = now() - StartTime 
+| project EventType
+        ,State
+        ,StartTime
+        ,TimeGen
+        , ["12 hour"]=format_timespan(TimeGen, "hh:mm:ss")
+        , ["24 hour"]=format_timespan(TimeGen, "HH:mm:ss")
+        , ["12 hour no padding"]=format_timespan(TimeGen, "h:m:s")
+        , ["24 hour no padding"]=format_timespan(TimeGen, "H:m:s");        
+
+
+// f/F can also be used for subseconds. Lowercase f will always display a 0,
+// uppercase F's will only display a number if there's a subsecond value. 
+// Otherwise nothing is displayed. 
+// The Number of f's indicates the precesion down to millionth's of a second
+// not going to name all the columns - you get the idea :)
+StormEvents
+| take 100
+| extend TimeGen = now() - StartTime 
+| project EventType
+        ,State
+        ,StartTime
+        ,TimeGen
+        , format_timespan(TimeGen, "HH:mm:ss.f")
+        , format_timespan(TimeGen, "HH:mm:ss.F")
+        , format_timespan(TimeGen, "HH:mm:ss.ff")
+        , format_timespan(TimeGen, "HH:mm:ss.FF")
+        , format_timespan(TimeGen, "HH:mm:ss.fff")
+        , format_timespan(TimeGen, "HH:mm:ss.FFF")
+        , format_timespan(TimeGen, "HH:mm:ss.ffff")
+        , format_timespan(TimeGen, "HH:mm:ss.FFFF")
+        , format_timespan(TimeGen, "HH:mm:ss.fffff")
+        , format_timespan(TimeGen, "HH:mm:ss.FFFFF")
+        , format_timespan(TimeGen, "HH:mm:ss.ffffff")
+        , format_timespan(TimeGen, "HH:mm:ss.FFFFFF")
+        , format_timespan(TimeGen, "HH:mm:ss.fffffff")
+        , format_timespan(TimeGen, "HH:mm:ss.FFFFFFF");
+
+// datetime_part
+// Extracts part of a date time
+StormEvents
+| take 50
+| project State 
+        ,EventType 
+        , StartTime 
+        , year = datetime_part("year", StartTime )
+        , quarter = datetime_part("quarter", StartTime )
+        , month = datetime_part("month", StartTime)
+        , weekOfYear = datetime_part("weekOfYear", StartTime)
+        , day = datetime_part("day", StartTime)
+        , dayOfYear = datetime_part("dayOfYear", StartTime)
+        , hour = datetime_part("hour", StartTime)
+        , minute = datetime_part("minute", StartTime )
+        , second = datetime_part("second", StartTime)
+        , millisecond = datetime_part("millisecond", StartTime)
+        , microsecond = datetime_part("microsecond", StartTime)
+        , nanosecond = datetime_part("nanosecond", StartTime);
+
+
+// Can be useful if you want to group the number of events by part of
+// the calendar, regardless of a specific date
+// Here we'll count number of events by day of the month to see which day of the month
+// has the most events
+StormEvents
+| extend DayOfMonth = datetime_part("day",StartTime )
+| project State 
+         ,EventType 
+         ,DayOfMonth 
+| summarize EventCount = count() by DayOfMonth 
+| order by DayOfMonth asc;
+
+// Ok, showing off here :) But we will get to this in all its glory later on!
+StormEvents
+| extend DayOfMonth = datetime_part("day",StartTime )
+| project 
+         EventType 
+         ,DayOfMonth 
+| summarize EventCount = count() by DayOfMonth 
+| order by DayOfMonth asc
+| render barchart with(xcolumn=DayOfMonth, xtitle="Day of the month",ytitle="Count per day");
+
+// Case
+// Evaluates a list of predicates and returns the first result expression whose predicate is satisfied.
+StormEvents
+| where DamageProperty > 0
+| extend Severity = case (DamageProperty <= 10000, "Minor"
+                        ,DamageProperty <= 50000, "Moderate"
+                        ,DamageProperty <= 100000, "High"
+                        , "Severe")
+| project State 
+         ,DamageProperty 
+         ,Severity;
+
+// These can be useful when summarizing
+StormEvents
+| where DamageProperty > 0
+| extend Severity = case (DamageProperty <= 10000, "Minor"
+                        ,DamageProperty <= 50000, "Moderate"
+                        ,DamageProperty <= 100000, "High"
+                        , "Severe")
+| summarize SeverityCount=count() 
+         by Severity;
+
+// iif is a immediate if else
+StormEvents
+| extend DamageNoted = iif(DamageCrops + DamageProperty == 0, "none noted","Damage Reported")
+| project DamageCrops ,DamageProperty ,DamageNoted ;
+
+// Could also be used with dates
+StormEvents 
+| extend FirstHalfOfYear = iif( datepart("month", StartTime) between (1 .. 6),"First half","Second half") 
+| project StartTime
+        , FirstHalfOfYear; 
+
+
+// In KQL, strings can be empty, and numeric fields can be null. To handle
+// determining when a string is empty, or a number is null, we have
+// isempty and isnull
+
+// isempty matches on empty text strings
+demo_many_series1 
+| where isempty(DB ) == 1
+| summarize  EmptyDBName = count()
+   by DB; 
+
+// or non-empty string
+demo_many_series1 
+| where isempty(DB ) == 0
+| summarize  EmptyDBName = count()
+   by DB; 
+   
+// isnull matches on null columns
+demo_many_series1 
+| where isnull(DataRead) == 0
+| summarize  EmptyData = count()
+   by DataRead; 
+
+
+// split
+// Splits a given string according to a given delimiter and returns a string array with the contained substrings.
+// An optional third parameter lets you extract a component of the split array
+demo_make_series1 
+| where BrowserVer has "Chrome"
+| extend Browser = split(BrowserVer ," ",0)
+| extend Ver = split(BrowserVer ," ", 1)
+| extend BrowserType = Browser[0]
+| extend MajorVer = tostring(split(Ver[0],".",0)[0])
+| extend MinorVer = tostring(split(Ver[0],".",1)[0])
+| project  BrowserType 
+          ,MajorVer 
+          ,MinorVer
+| summarize ["Count by Major Minor version"]= count() by MajorVer ,MinorVer
+| order by MajorVer asc, MinorVer asc;
+
+demo_make_series1 
+| where BrowserVer has "Chrome"
+| extend Browser = split(BrowserVer ," ",0)
+| extend Ver = split(BrowserVer ," ", 1)
+| extend BrowserType = Browser[0]
+| extend MajorVer = toint(split(Ver[0],".",0)[0])
+| extend MinorVer = toint(split(Ver[0],".",1)[0])
+| project  BrowserType 
+          ,MajorVer 
+          ,MinorVer
+| summarize ["Count by Major Minor version"]= count() by MajorVer ,MinorVer
+| order by MajorVer asc, MinorVer asc;
+
+// many of the  string operators were seen in the previous module
+// for a complete list go to https://docs.microsoft.com/en-us/azure/kusto/query/datatypes-string-operators
+// strcat
+// strcat is used to combine fields together
+StormEvents 
+| take 100                       // done just to give us a small dataset to demo
+| extend ["State - Event - Source"] = strcat(State, " - ", EventType , " - ", Source  ) 
+| project ["State - Event - Source"] 
+        , EventType 
+        , Source; 
+
+
+// Use strcat with case and datetime_part to get month names
+StormEvents 
+| extend MonthName = case( datetime_part("month", StartTime ) ==  1, "Jan "
+                         , datetime_part("month", StartTime) ==  2, "Feb "
+                         , datetime_part("month", StartTime) ==  3, "Mar "
+                         , datetime_part("month", StartTime) ==  4, "Apr "
+                         , datetime_part("month", StartTime) ==  5, "May "
+                         , datetime_part("month", StartTime) ==  6, "Jun "
+                         , datetime_part("month", StartTime) ==  7, "Jul "
+                         , datetime_part("month", StartTime) ==  8, "Aug "
+                         , datetime_part("month", StartTime) ==  9, "Sep "
+                         , datetime_part("month", StartTime) == 10, "Oct "
+                         , datetime_part("month", StartTime) == 11, "Nov "
+                         , datetime_part("month", StartTime) == 12, "Dec "
+                         , "Unknown Month"
+                         )
+| extend DateText = strcat( MonthName
+                          , datetime_part("day", StartTime)
+                          , ", "
+                          , datetime_part("year", StartTime) 
+                          ) 
+| project EventType 
+        , State
+        , StartTime 
+        , MonthName
+        , DateText;  
+
+
+
+  

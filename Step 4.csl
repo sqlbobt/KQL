@@ -1,0 +1,472 @@
+// KQL Sample code - Step 4 Creating datasets
+ 
+// This Sample Code is provided for the purpose of illustration only and is not intended to be used in a production environment.  
+// THIS SAMPLE CODE AND ANY RELATED INFORMATION ARE PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A PARTICULAR PURPOSE.  
+// We grant You a nonexclusive, royalty-free right to use and modify the 
+// Sample Code and to reproduce and distribute the object code form of the Sample Code, provided that You agree: (i) to not use Our name, logo, or trademarks to market Your software product in which the Sample Code is embedded; 
+// (ii) to include a valid copyright notice on Your software product in which the Sample Code is 
+// embedded; and 
+// (iii) to indemnify, hold harmless, and defend Us and Our suppliers from and against any claims or lawsuits, including attorneys’ fees, that arise or result from the use or distribution of the Sample Code.
+// Please note: None of the conditions outlined in the disclaimer above will supercede the terms and conditions contained within the Premier Customer Services Description.
+// 
+
+// let
+// let has many uses. First, it used to bind a name to an expression
+// that expression can be a simple variable for readability
+//
+let eventID = 61032;
+StormEvents
+| project State
+        , EventType
+        , EventId
+        , DamageProperty
+| where EventId == eventID;
+
+
+// This has advantages when the constant is used multiple times in a query,
+// making it easier to operationalize your query.
+let source = "Trained Spotter";
+StormEvents
+| where Source == source
+| extend InfoFor = strcat("This is data for source: ",source)
+| project InfoFor
+         ,StartTime
+         ,EndTime
+         ,EventType;
+
+// Next, let can be used to hold calculated values
+let startDate = datetime(2007-12-30);
+StormEvents
+| project EventType
+          , State
+          , StartTime
+          , BeginLocation
+| where StartTime >= startDate;
+
+
+// Finally, let can hold a function
+let dateDiffInDays = (date1: datetime, date2: datetime = datetime(2019-03-05)) { (date1 - date2) / 1d };
+print dateDiffInDays(now(), todatetime("2019-03-05"));
+
+// Similar to most languages, after declaring the name the ( ) contains the
+// parameters. Here we have two datetime values. The first is mandatory, 
+// the function will fail without it. The second is optional, if no value
+// is passed in it will use the value after the =, in this case 
+// datetime(2018-01-01)
+
+// Next are { } which house the actual function itself. Here we subtract the
+// date2 value from date1 and divide by 1d to get a value back in days
+
+// Here is an example where we take the default for date2
+let dateDiffInDays = (date1: datetime, date2: datetime = datetime(2019-03-05)) { (date1 - date2) / 1d };
+print dateDiffInDays(now());
+
+
+// join
+// for SQL developers this concept should be familiar
+// however, KQL has many more join types than SQL
+// joins two tables together when they have a common column name
+demo_series2
+| take 100
+| join (demo_series3) on ['id'];
+
+
+// When they don't have a common column you can still join them
+// you just need to explicitly list the left and right expressions
+demo_make_series1
+| take 100
+| join (demo_many_series1) on $left.TimeStamp == $right.TIMESTAMP;
+
+
+// joins can get fairly complex if you need them to. 
+// (Note the default is to do an innerunique join, see notes 
+//  below for more on the kinds of joins.)
+// Couldn't come up with an example using StoreEvents
+// so this uses the standard Perf table from Azure SQL Analytics
+
+Perf
+| where TimeGenerated >= ago(90d)
+| where CounterName == "% Processor Time"
+| project Computer 
+        , CounterName 
+        , CounterValue 
+        , PerfTime=TimeGenerated 
+| join ( Alert        
+       | where TimeGenerated >= ago(90d)
+       | project Computer 
+               , AlertName 
+               , AlertDescription 
+               , ThresholdOperator 
+               , ThresholdValue 
+               , AlertTime=TimeGenerated 
+       | where AlertName == "High CPU Alert" 
+       )
+    on Computer;
+
+
+// join supports many types:
+// fullouter, inner, innerunique, leftanti, leftantisemi,
+// leftouter, leftsemi, rightanti, rightantisemi, rightouter, rightsemi
+// The default is an innerunique join
+// Use the kind hint to indicate what type of join to use
+
+Perf
+| where CounterName == "% Processor Time"
+| project Computer 
+        , CounterName 
+        , CounterValue 
+        , PerfTime=TimeGenerated 
+| join kind=fullouter 
+       ( Alert        
+       | project Computer 
+               , AlertName 
+               , AlertDescription 
+               , ThresholdOperator 
+               , ThresholdValue 
+               , AlertTime=TimeGenerated 
+       | where AlertName == "High CPU Alert" 
+       )
+    on Computer; 
+
+// join kind quick reference
+
+// innerunique
+//   Only one row from the left is matched for each value of the on key. 
+//   Output contains a match for each row on the right with a row on the left
+//   NOTE: This is the default. If you are coming from a SQL background, 
+//   you might expect the behavior to be inner, so be careful to look over
+//   your results. If you wanted an inner joing you will need to
+//   explictly specify kind=inner when you execute the query!
+
+// inner
+//   Output has one row for every combination of left and right
+
+// leftouter
+//   In addition to every match, there's a row for every row on the left
+//   even if there's no match on the right
+
+// rightouter / fullouter
+//   Same as left outer, but either includes all right rows, or all rows,
+//   regardless of matches.
+
+// leftanti / rightanti
+//   The reverse of outer joins, only returns rows who do NOT have a match
+//   on the right (or left depending on which was used)
+
+// leftsemi / rightsemi
+//   Returns rows who have a match on both sides, but only includes the 
+//   columns from the left side (or right if rightsemi was used)
+
+
+// In this example, we'll use our friend the let statement to create
+// two datasets. The first will be a list of computers, with their 
+// Percent CPU averaged by the hour of the day. 
+// In the second dataset, we'll do the same thing except we'll 
+// average the available hard disk space. 
+// The join will allow us to connect these datasets by the common
+// columns of time and computer, displaying the two metrics we are
+// interested in. 
+
+let startTime = ago(1d);
+let endTime = now();
+let ProcData = (
+    Perf 
+    | where TimeGenerated between (startTime .. endTime)
+    | where CounterName == "% Processor Time"
+    | where ObjectName == "Processor"
+    | where InstanceName == "_Total"
+    | summarize PctCpuTime = avg(CounterValue) 
+            by Computer, bin(TimeGenerated, 1h)
+);
+let MemData = (
+    Perf 
+    | where TimeGenerated between (startTime .. endTime)
+    | where CounterName == "Available MBytes"
+    | summarize AvailableMB = avg(CounterValue) 
+            by Computer, bin(TimeGenerated, 1h)
+);
+ProcData
+| join kind= inner (
+   MemData 
+) on Computer, TimeGenerated
+| project TimeGenerated, Computer, PctCpuTime, AvailableMB
+| order by TimeGenerated desc, Computer asc;
+
+// union
+// Join vs Union
+
+// Join A & B
+// Row: A.Col1 A.Col2 A.Col3 B.Col1 B.Col2 B.Col3
+
+// Union A & B
+// Row A.Col1 A.Col2 A.Col3 A.Col4  <empty>
+// Row B.Col1 B.Col2 B.Col3 <empty> B.Col5
+
+// Creates an output dataset that is the combination of two tables
+let db17 =
+demo_many_series1
+| where DB == 17;
+let au = 
+demo_make_series1
+| where Country == "Australia";
+db17 
+|union au;
+
+// An optional parameter lets you add a column (here it was named From)
+// to indicate which table the data came from.
+let db17 =
+demo_many_series1
+| where DB == 17;
+let au = 
+demo_make_series1
+| where Country == "Australia";
+db17 
+|union withsource="From" au;
+
+// Here is a version where we project specific columns. To do so, we
+// needed to wrap the calls inside ( )
+let db17 =
+demo_many_series1
+| where DB == 17;
+let au = 
+demo_make_series1
+| where Country == "Australia";
+(db17 
+| project Loc
+        , DataRead
+| take 50)        
+| union withsource=From 
+(au
+| project BrowserVer
+        , OsVer
+| take 50)
+;
+
+// You can also call union by using the union keyword first, then
+// listing the tables to union
+// I prefer this syntax
+let db17 =
+demo_many_series1
+| where DB == 17;
+let au = 
+demo_make_series1
+| where Country == "Australia";
+union with_source=From
+(db17 
+| project Loc
+        , DataRead
+| take 50),        
+(au
+| project BrowserVer
+        , OsVer
+| take 50);
+
+// Union has a modifier: kind=inner and kind=outer
+// inner returns all columns common to all input tables
+
+let db17 =
+demo_many_series1
+| where DB == 17;
+let au = 
+demo_make_series1
+| where Country == "Australia";
+union with_source=From kind=inner 
+(db17 
+| project Loc
+        , DataRead
+| take 50),        
+(au
+| project BrowserVer
+        , OsVer
+| take 50);
+
+// outer returns all columns, setting empty columns to a null (the default) 
+let db17 =
+demo_many_series1
+| where DB == 17;
+let au = 
+demo_make_series1
+| where Country == "Australia";
+union with_source=From kind=outer 
+(db17 
+| project Loc
+        , DataRead
+| take 50),        
+(au
+| project BrowserVer
+        , OsVer
+| take 50);
+
+
+// datatable
+// Generates a datatable that is defined in the code itself
+datatable (ID:int, TimeGenerated:datetime, WebSiteName:string, WebSiteURL:string)
+[ 1, datetime(2018-04-01), 'SQLSkills', 'https://www.sqlskills.com'
+, 2, datetime(2018-04-02), 'SQL Performance', 'https://www.sqlperformance.com'
+, 3, datetime(2018-04-03), 'SQL Server Documentation', 'https://docs.microsoft.com/en-us/sql/?view=sql-server-2017'
+]
+
+
+// Can be useful with a let
+let FavoriteSQLWebsites = datatable ( ID:int
+                                  , TimeGenerated:datetime
+                                  , WebSiteName:string
+                                  , WebSiteURL:string
+                                  )
+[   1
+  , datetime(2018-04-01)
+  , 'SQLSkills'
+  , 'https://www.sqlskills.com'
+,   2
+  , datetime(2018-04-02)
+  , 'SQL Performance'
+  , 'https://www.sqlperformance.com'
+,   3
+  , datetime(2018-04-03)
+  , 'SQL Server Documentation'
+  , 'https://docs.microsoft.com/en-us/sql/?view=sql-server-2017'
+];
+FavoriteSQLWebsites 
+| project WebSiteName
+        , WebSiteURL
+
+// now that we have datatables we can do some more demos without
+// relying on the sample data tables provided
+// prev / next
+// prev gets the value from a column in previous row
+// Must use serialize operator in order to enable prev/next functionality
+let SomeData = datatable ( rowNum:int, rowVal:string )
+[
+  1, "Value 01"
+, 2, "Value 02"
+, 3, "Value 03"
+, 4, "Value 04"
+, 5, "Value 05"
+, 6, "Value 06"
+, 7, "Value 07"
+, 8, "Value 08"
+, 9, "Value 09"
+];
+SomeData 
+| serialize 
+| extend prvVal = iif(isempty(prev(rowVal))==true,"",strcat("Previous Value is ", prev(rowVal)));
+
+
+// next
+let SomeData = datatable ( rowNum:int, rowVal:string )
+[
+  1, "Value 01"
+, 2, "Value 02"
+, 3, "Value 03"
+, 4, "Value 04"
+, 5, "Value 05"
+, 6, "Value 06"
+, 7, "Value 07"
+, 8, "Value 08"
+, 9, "Value 09"
+];
+SomeData 
+| serialize 
+| extend nxtVal = iif(isempty(next(rowVal)==true),"",strcat("Next Value is ", next(rowVal)));
+
+
+// You can use an offset to go back or forward more than 1
+let SomeData = datatable ( rowNum:int, rowVal:string )
+[
+  1, "Value 01"
+, 2, "Value 02"
+, 3, "Value 03"
+, 4, "Value 04"
+, 5, "Value 05"
+, 6, "Value 06"
+, 7, "Value 07"
+, 8, "Value 08"
+, 9, "Value 09"
+];
+SomeData 
+| serialize 
+| extend prvVal2 = prev(rowVal, 2)
+| extend prvVal = strcat("Previous Value back 2 was ", prvVal2);
+
+
+// If you use the offset, you can add a third parameter to use as 
+// a default when there is no prev or next row
+let SomeData = datatable ( rowNum:int, rowVal:string )
+[
+  1, "Value 01"
+, 2, "Value 02"
+, 3, "Value 03"
+, 4, "Value 04"
+, 5, "Value 05"
+, 6, "Value 06"
+, 7, "Value 07"
+, 8, "Value 08"
+, 9, "Value 09"
+];
+SomeData 
+| serialize 
+| extend prvVal = prev(rowVal, 1, "not valid for this row")
+| extend prvVal = strcat("Previous Value was ", prvVal)
+
+
+// iif is a useful function for testing and setting defaults on the
+// boundaries. Also note you can use prev/next in calculations, as 
+// well as mix them
+let SomeData = datatable ( rowNum:int, rowVal:string )
+[
+  1, "Value 01"
+, 2, "Value 02"
+, 3, "Value 03"
+, 4, "Value 04"
+, 5, "Value 05"
+, 6, "Value 06"
+, 7, "Value 07"
+, 8, "Value 08"
+, 9, "Value 09"
+];
+SomeData 
+| serialize 
+| extend prvVal = prev(rowVal)
+       , nxtNum = next(rowNum, 1, 0)     // back one row, 0 is default
+| extend displayPrvVal = iif( isempty(prvVal)==true
+                            , "There was no prevoius value."
+                            , strcat("The previous Value was ", prvVal)
+                            )
+       , displayNxtNum = nxtNum * 100;
+
+// row_cumsum
+// row_cumsum provides a way to do a cumulative summary for values in a 
+// data set. In this simple example, for each row it adds a column 
+// (cumulativeSum) adding up the value in column a up to that row
+datatable (a:long) 
+[
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+]
+| serialize cumulativeSum=row_cumsum(a);
+
+
+//Now lets put some of our knowledge together!
+StormEvents
+| summarize Damages = sum(DamageProperty + DamageCrops)
+    by EventType,bin(StartTime,30d)
+| order by EventType asc 
+| serialize CostToCurrentMonth = row_cumsum(Damages, EventType != next(EventType))
+| project EventType,Damages,CostToCurrentMonth, when =format_datetime(StartTime,'MM/dd/yyyy') 
+
+
+//------------------------------------------------------------------------------
+// materialize
+//------------------------------------------------------------------------------
+
+// materialze will take the results of a query and cache them in memory.
+// This means the query is only run once, as opposed to multiple times.
+
+let m = materialize(
+    StormEvents | summarize n=count() by State
+    );
+m
+| where n > 100;
+m
+| where n > 2000;
+m
+| where n between(1500 .. 2000);

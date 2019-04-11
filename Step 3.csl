@@ -1,0 +1,314 @@
+// KQL Sample code - Step 3
+ 
+// This Sample Code is provided for the purpose of illustration only and is not intended to be used in a production environment.  
+// THIS SAMPLE CODE AND ANY RELATED INFORMATION ARE PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A PARTICULAR PURPOSE.  
+// We grant You a nonexclusive, royalty-free right to use and modify the 
+// Sample Code and to reproduce and distribute the object code form of the Sample Code, provided that You agree: (i) to not use Our name, logo, or trademarks to market Your software product in which the Sample Code is embedded; 
+// (ii) to include a valid copyright notice on Your software product in which the Sample Code is 
+// embedded; and 
+// (iii) to indemnify, hold harmless, and defend Us and Our suppliers from and against any claims or lawsuits, including attorneys’ fees, that arise or result from the use or distribution of the Sample Code.
+// Please note: None of the conditions outlined in the disclaimer above will supercede the terms and conditions contained within the Premier Customer Services Description.
+// 
+
+
+// arg_max / arg_min
+// like a traditional min, max but with arguments
+
+// arg_max finds the maximum value for the column being summarized on - i.e. the first parameter, and 
+// returns the row where that maximum value was found
+StormEvents
+| summarize arg_max(DamageProperty ,*);
+
+
+// The second parameter indicates which columns to return. * means all.
+// By default it always returns the "by" column and the maximized value. 
+// 
+StormEvents
+| summarize arg_max(DamageProperty,EventType ) by State 
+| order by State asc ;
+
+
+// arg_min does the same except, of course, finding the minimum value for 
+// the column being summarized on, and returning rows where that min
+// value was found
+StormEvents
+| where DamageProperty >0
+| summarize arg_min(DamageProperty,*) by State 
+| order by State asc ;
+
+// Makeset / Makelist
+// Makeset - Creates a array of json objects by flattening a heirarcy. 
+StormEvents
+| summarize Details = makeset(StormSummary ) by EventType ;
+
+
+// Somthing more useful, getting the details where DamageProperty > 15000
+StormEvents
+| where DamageProperty > 15000
+| summarize Details = makeset(StormSummary ) by EventType ;
+
+
+// We'll see examples of how to use these sets in the next module, 
+// Working with Datasets. 
+// Makelist - Similar to makeset, but duplicates are not removed
+StormEvents
+| where DamageProperty > 15000
+| summarize Details = makelist(StormSummary ) by EventType ;
+
+// Note that makeset and makelist have an optional second parameter that
+// sets the max size of the returned list, which by default is 128
+StormEvents
+| where DamageProperty > 15000
+| summarize Details = makelist(StormSummary, 256 ) by bin(startofmonth(StartTime ),1d) ;
+
+
+//------------------------------------------------------------------------------
+// mvexpand
+//------------------------------------------------------------------------------
+
+// mvexpand takes a dynamic value (like a set or list) and converts it back
+// into individual rows
+StormEvents
+| where DamageProperty > 15000
+| summarize Details = makelist(StormSummary ) by EventType 
+| mvexpand Details;
+
+StormEvents
+| extend EventDetails=todynamic(StormSummary )
+| mv-expand EventDetails 
+| project cost=EventDetails.TotalDamages
+        ,des =EventDetails.Details.Description
+| where isempty(des) == 0 or cost > 0;
+
+// Percentiles
+// Percentiles calculates the value that is greater than x% of the sampleset. 
+// Here, it shows the CounterValue that is higher than 5% of the other 
+// values in the group, then the value that is greater than 50% of the 
+// incoming data, and finally a value that is greater than 95% of the data.
+StormEvents
+| summarize percentiles(DamageProperty ,5,50,95) by EventType ;
+
+// You can rename the columns if you need to using project-rename
+StormEvents
+| summarize percentiles(DamageProperty ,5,50,95) by EventType 
+| project-rename ["Fifth Percentile"] = percentile_DamageProperty_5
+               , ["Fiftith Percentile"] =  percentile_DamageProperty_50 
+               , ["Ninty-fifth Percentile"] = percentile_DamageProperty_95; 
+
+
+// Or you can rename in the summarize call
+StormEvents
+| summarize (["Fifth Percentile"], ["Fiftith Percentile"], ["Ninty-fifth Percentile"]) = percentiles(DamageProperty ,5,50,95) by EventType ;
+ 
+
+// You can set your own percentile levels
+StormEvents
+| summarize percentiles(DamageProperty ,5,10,15,20,25,50,95) by EventType ;
+
+
+// You can also return the data as a single column array using percentiles_array
+StormEvents
+| summarize percentiles_array(DamageProperty ,5,50,95) by EventType ;
+
+
+// And then pivot the data so instead of coming back as columns, they
+// now appear as rows
+StormEvents
+|summarize percent_array = percentiles_array(DamageProperty ,5,50,95) by EventType 
+|mv-expand percent_array ;
+
+// dcount
+// dcount returnes an ESTIMATED number of DISTINCT rows, as opposed to counting
+// on a distinct dataset, which is always accurate but slow. As a result dcount 
+// calculates faster especially over a very large dataset. 
+
+// Security events have an id that describes the type of event
+StormEvents
+| distinct EventType,BeginLocation 
+| order by BeginLocation ;
+
+// For comparison, count the different types of  events that occured
+// in the recent past
+StormEvents
+| distinct Source ,EventType 
+| summarize SourceCount = count() by Source 
+| order by Source asc;
+
+// Now we can use dcount to get an estimate of these
+StormEvents
+| distinct Source ,EventType 
+| summarize SourceCount = dcount(EventType ) by Source 
+| order by Source asc;
+
+
+// A second parameter lets you set the accuracy level
+// 0 = Least accurate, 1.6% error
+// 1 = Default, balances accuracy and time, 0.8% error level
+// 2 = Accurate but slow, 0.4% error
+// 3 = Extra accurate but slowest, 0.28% error level
+
+// 0 = Least accurate, 1.6% error
+// Now we can use dcount to get an estimate of these
+StormEvents
+| distinct Source ,EventType 
+| summarize SourceCount = dcount(EventType,0 ) by Source 
+| order by Source asc;
+
+// 1 = Default, balances accuracy and time, 0.8% error level
+// (Same as not using the second parameter in the first example)
+// Now we can use dcount to get an estimate of these
+StormEvents
+| distinct Source ,EventType 
+| summarize SourceCount = dcount(EventType,1 ) by Source 
+| order by Source asc;
+
+// 2 = Accurate but slow, 0.4% error
+StormEvents
+| distinct Source ,EventType 
+| summarize SourceCount = dcount(EventType,2 ) by Source 
+| order by Source asc;
+
+// 3 = Extra accurate but slowest, 0.28% error level
+StormEvents
+| distinct Source ,EventType 
+| summarize SourceCount = dcount(EventType,3 ) by Source 
+| order by Source asc;
+
+// dcountif
+// dcountif is similar to dcount, except it allows you to embed an if condition
+// within the function call
+
+// Here we are only looking for EventTypes in a specific list
+StormEvents
+//| distinct Source ,EventType 
+| summarize dcountif(EventType , EventType in ("Flood","Hail")) by EventType
+//| where EventType in ("Flood","Hail")
+| order by EventType asc;
+
+// dcountif has a similar accuracy switch as dcount, although it omits level 3
+// 0 = Least accurate, 1.6% error
+// 1 = Default, balances accuracy and time, 0.8% error level
+// 2 = Accurate but slow, 0.4% error
+
+// 0 = Least accurate, 1.6% error
+// For comparison, here is a similar version using countif
+StormEvents
+| distinct Source ,EventType 
+| summarize EventTypeCount = countif(EventType in ("Flood","Hail")) by EventType
+| order by EventType asc;
+
+// countif
+// Like dcountif, countif allows you to add a filter condition.
+StormEvents
+| summarize RowCount = countif(EpisodeNarrative contains "wind") by EventType ; 
+
+// Similar query without Countif, note that rows with a 0 count are suppressed
+StormEvents
+| where EventNarrative contains "wind"
+| summarize count() by EventType ;
+
+// We can add an extra where to remove the 0 valued rows
+StormEvents
+| summarize RowCount = countif(EpisodeNarrative contains "wind") by EventType 
+| where RowCount >0
+| order by EventType;
+
+
+// pivot
+// Let's say you have a report of Events, the state, and how many they had
+StormEvents
+| project State, EventType 
+| summarize count() by State, EventType
+| order by State asc,EventType asc;
+
+// A bit hard to read though, it'd make much more sense to have the event levels
+// come in as columns, in a spreadsheet like fashion. That's what Pivot will
+// do for you!
+StormEvents
+| project State, EventType
+| evaluate pivot(EventType)
+| order by State asc;
+
+
+// top-nested
+// top-nested does nested measurements. 
+
+// In this example, it first gets the top 3 States as measured by their 
+// count. For each one of those, it gets the top 3 Sources, as measured
+// by their count
+// and then the top 1 EndLocation
+StormEvents
+| top-nested 1 of State by StateCount = count(),
+  top-nested 5 of Source by SourceCount = count(),
+  top-nested 1 of EndLocation by EndCount = count();
+
+// top-nested supports many different aggregations, including:
+// sum(), count(), max(), min(), dcount(), avg(), percentile(), percentilew(), 
+// or any algebric combination of these aggregation
+// the min, max, and avg of the BeginLat aren't important 
+// so just project the columns we are interested in.
+StormEvents
+| top-nested 2 of State by min(BeginLat),
+  top-nested 3 of Source by max(BeginLat),
+  top-nested 1 of EndLocation by avg(BeginLat)
+| project State, Source, EndLocation ;
+
+// top-nested can also include a row for others not included in the top X
+StormEvents
+| top-nested 2 of State with others = "All Other States" 
+        by StateCount = count(),
+  top-nested 3 of Source by SourceCount = count(),
+  top-nested 1 of EndLocation by EndCount = count();
+
+// or even just at the sub levels
+StormEvents
+| top-nested 2 of State by StateCount = count(),
+  top-nested 3 of Source with others = "All Other Sources" 
+        by SourceCount = count(),
+  top-nested 1 of EndLocation by EndCount = count();
+
+// max / min
+// max is simple, it just returns the maximum value for the column being
+// passed in. 
+StormEvents
+| summarize max(DamageProperty );
+
+// min is almost identical
+StormEvents
+| where DamageProperty  > 0
+| summarize min(DamageProperty );
+
+
+// sum / sumif
+// Like max, sum is very simple, just returns a grand total for the indicated
+// column
+StormEvents
+| summarize ["Total Property Damage"] =sum(DamageProperty);
+
+
+// sumif allows you to add your condition to the parameter list
+StormEvents
+| summarize ["Total Property Damage From Flood or Hail"] = sumif(DamageProperty ,EventType in ("Flood","Hail"));
+
+// any
+// any is a random row generator. When used with an *, it returns a random
+// row from the input dataset
+StormEvents
+| summarize any(*);
+
+
+// You can also pass in a specific column name to return just that column
+StormEvents
+| summarize any(EventType);
+
+// You can specify a combination of columns
+StormEvents 
+| summarize any(State, EventType , DamageProperty);
+
+// When you use with by, it returns a random row for each distinct value
+// in the column after the by clause
+StormEvents
+| summarize any(*) by EventType 
+| order by EventType asc;
+
+ 

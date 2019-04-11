@@ -1,0 +1,307 @@
+// LogAnalytics Queries that demonstrate many of the queries we learned with StormEvents
+ 
+// This Sample Code is provided for the purpose of illustration only and is not intended to be used in a production environment.  
+// THIS SAMPLE CODE AND ANY RELATED INFORMATION ARE PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A PARTICULAR PURPOSE.  
+// We grant You a nonexclusive, royalty-free right to use and modify the 
+// Sample Code and to reproduce and distribute the object code form of the Sample Code, provided that You agree: (i) to not use Our name, logo, or trademarks to market Your software product in which the Sample Code is embedded; 
+// (ii) to include a valid copyright notice on Your software product in which the Sample Code is 
+// embedded; and 
+// (iii) to indemnify, hold harmless, and defend Us and Our suppliers from and against any claims or lawsuits, including attorneys’ fees, that arise or result from the use or distribution of the Sample Code.
+// Please note: None of the conditions outlined in the disclaimer above will supercede the terms and conditions contained within the Premier Customer Services Description.
+// 
+
+// Translated demos from Storm Events to portal.loganalytics.io/demo
+// no where near 100% but the most useful at least
+Perf
+| where CounterName == "Free Megabytes"  // Get the Free Megabytes
+    and TimeGenerated >= ago(1h)         // ...within the last hour
+| project Computer                       // For each return the Computer Name
+        , TimeGenerated                  // ...and when the counter was generated
+        , CounterName                    // ...and the Counter Name
+        , FreeMegabytes=CounterValue     // ...and rename the counter value
+| distinct Computer                      // Now weed out duplicate rows as
+         , TimeGenerated
+         , CounterName                   // ...the perf table will have
+         , FreeMegabytes                 // ...multiple entries during the day
+| top 25 by FreeMegabytes asc ;           // Filter to most critical ones
+
+
+// Extract pulls part of a passed in string (the third parameter)
+// based on the regular expression placed inside parenthesis
+// The second param determines what is returned. A 0 returns
+// the whole expression
+Perf
+| take 10000
+| where ObjectName == "LogicalDisk"
+    and InstanceName matches regex "[A-Z]:"
+| project Computer 
+        , CounterName 
+        , extract("[A-Z]:", 0, InstanceName);
+
+
+// When the second param is 1, it returns just the part in the parenthesis
+Perf
+| take 10000
+| where ObjectName == "LogicalDisk"
+    and InstanceName matches regex "[A-Z]:"
+| project Computer 
+        , CounterName 
+        , extract("([A-Z]):", 1, InstanceName);
+        
+// using parse to decompose an error message
+Event
+| where RenderedDescription startswith "Event code:" 
+| parse RenderedDescription with "Event code: " myEventCode 
+                                 " Event message: " myEventMessage 
+                                 " Event time: " myEventTime 
+                                 " Event time (UTC): " myEventTimeUTC 
+                                 " Event ID: " myEventID 
+                                 " Event sequence: " myEventSequence
+                                 " Event occurrence: " *
+| project myEventCode 
+        , myEventMessage 
+        , myEventTime 
+        , myEventTimeUTC 
+        , myEventID 
+        , myEventSequence ;
+        
+// examining Security alerts by making its extended properties a JSON object then parsing
+SecurityAlert
+| extend ExtProps=todynamic(ExtendedProperties)
+| project AlertName 
+        , TimeGenerated 
+        , AlertStartTime = ExtProps["Alert Start Time (UTC)"]
+        , Source = ExtProps["Source"]
+        , NonExistentUsers = ExtProps["Non-Existent Users"]
+        , ExistingUsers = ExtProps["Existing Users"]
+        , FailedAttempts = ExtProps["Failed Attempts"]
+        , SuccessfulLogins = ExtProps["Successful Logins"]
+        , SuccessfulUserLogins = ExtProps["Successful User Logons"]
+        , AccountLogonIds = ExtProps["Account Logon Ids"]
+        , FailedUserLogins = ExtProps["Failed User Logons"]
+        , EndTimeUTC = ExtProps["End Time UTC"]
+        , ActionTaken = ExtProps["ActionTaken"]
+        , ResourceType = ExtProps["resourceType"]
+        , ServiceId = ExtProps["ServiceId"]
+        , ReportingSystem = ExtProps["ReportingSystem"]
+        , OccuringDataCenter = ExtProps["OccuringDatacenter"];
+
+// using split to decompose counter paths
+Perf
+| take 100  // done just to give us a small dataset to demo
+| extend CounterPathArray = split(CounterPath, "\\") 
+| extend myComputer = CounterPathArray[2] 
+       , myObjectInstance = CounterPathArray[3]
+       , myCounterName = CounterPathArray[4]
+| project Computer 
+        , ObjectName 
+        , CounterName 
+        , InstanceName 
+        , myComputer 
+        , myObjectInstance
+        , myCounterName
+        , CounterPath  ;
+        
+// Get event count per month
+Event
+| where TimeGenerated between ( ago(365d) .. startofmonth(now()) )
+| summarize EventCount = count() by calMonth=startofmonth(TimeGenerated) 
+| sort by calMonth desc
+| extend MonthNumber = datetime_part("month", calMonth)
+       , YearNumber = datetime_part("year", calMonth)
+| extend MonthName = case( MonthNumber ==  1, "Jan "
+                         , MonthNumber ==  2, "Feb "
+                         , MonthNumber ==  3, "Mar "
+                         , MonthNumber ==  4, "Apr "
+                         , MonthNumber ==  5, "May "
+                         , MonthNumber ==  6, "Jun "
+                         , MonthNumber ==  7, "Jul "
+                         , MonthNumber ==  8, "Aug "
+                         , MonthNumber ==  9, "Sep "
+                         , MonthNumber == 10, "Oct "
+                         , MonthNumber == 11, "Nov "
+                         , MonthNumber == 12, "Dec "
+                         , "Unknown Month"
+                         )
+| extend YearMonth = strcat( MonthName, " - ", YearNumber) 
+| project YearMonth, EventCount;
+
+// using top-nested to get top counters
+Perf 
+| top-nested 3 of ObjectName 
+          by ObjectCount = count() 
+, top-nested 3 of CounterName 
+        with others = "All Other Counters" 
+          by CounterNameCount = count() 
+| sort by ObjectName asc
+        , CounterName asc;
+        
+//using join to display two different metrics for the same computer together
+let startTime = ago(1d);
+let endTime = now();
+let ProcData = (
+    Perf 
+    | where TimeGenerated between (startTime .. endTime)
+    | where CounterName == "% Processor Time"
+    | where ObjectName == "Processor"
+    | where InstanceName == "_Total"
+    | summarize PctCpuTime = avg(CounterValue) 
+            by Computer, bin(TimeGenerated, 1h)
+);
+let MemData = (
+    Perf 
+    | where TimeGenerated between (startTime .. endTime)
+    | where CounterName == "Available MBytes"
+    | summarize AvailableMB = avg(CounterValue) 
+            by Computer, bin(TimeGenerated, 1h)
+);
+ProcData
+| join kind= inner (
+   MemData 
+) on Computer, TimeGenerated
+| project TimeGenerated, Computer, PctCpuTime, AvailableMB
+| sort by TimeGenerated desc, Computer asc;
+
+// creating a moving average vs actual cpu by using summarize and extend
+// and rendering as a timechart
+let startTime = ago(1d);
+let endTime = now();
+Perf 
+| where TimeGenerated between (startTime .. endTime)
+| where Computer == "ContosoWeb"
+| where CounterName == "% Processor Time"
+| where ObjectName == "Processor"
+| where InstanceName == "_Total"
+| summarize PctCpuTime = avg(CounterValue) by bin(TimeGenerated, 1h)
+| sort by TimeGenerated asc //serialize is implied in any sort operation
+| extend movAvg= (PctCpuTime + prev(PctCpuTime, 1, 0) + prev(PctCpuTime, 2, 0))/3.0
+| render timechart ;
+
+// row_cumsum has a second parameter, reset. Reset takes a true/false
+// value that tells it whether to reset the value being summed to 0. 
+// Here we create a variable, temp. Then use it as a row number for
+// each computer, resetting the value when the computer name changes
+// (also providing another useful example for the use of prev)
+let fromTime = ago(3h);
+let thruTime = now();
+Perf 
+| where TimeGenerated between (fromTime .. thruTime)
+| where CounterName == "% Processor Time"
+| where ObjectName == "Processor"
+| where InstanceName == "_Total"
+| summarize PctCpuTime = avg(CounterValue) 
+         by Computer, bin(TimeGenerated, 1h)
+| sort by Computer asc, TimeGenerated asc
+| extend temp = 1
+| extend rowNum_partitioned = row_cumsum(temp, Computer != prev(Computer))
+| project-away temp; 
+
+
+// a more complex example of getting the percentage of errors and warnings by computer
+// materialize allows us to create named resultsets to simplify the programming
+let myEvents = materialize( Event 
+                          | where TimeGenerated >= ago(1h)
+                          | project Source
+                                  , Computer
+                                  , TimeGenerated
+                                  , EventLevelName
+                          );
+let errorCount = toscalar( myEvents 
+                         | where EventLevelName == "Error" 
+                         | count  
+                         );
+let warningCount = toscalar( myEvents 
+                           | where EventLevelName == "Warning" 
+                           | count  
+                           );
+myEvents 
+| summarize eventCount = count() by Computer, EventLevelName
+| evaluate pivot(EventLevelName, sum(eventCount))
+| extend warningRatioRaw = round(  (todouble(Warning) / warningCount)  * 100
+                                , 2
+                                )
+       , errorRatioRaw = round( (todouble(Error) / errorCount)  * 100
+                              , 2
+                              )
+| sort by errorRatioRaw desc 
+        , warningRatioRaw
+        , Computer
+| extend WarningPercentage = strcat(warningRatioRaw, "%")
+       , ErrorPercentage = strcat(errorRatioRaw, "%")
+| project Computer 
+        , ErrorPercentage 
+        , WarningPercentage;
+        
+        
+//Let's see how we are using memory, this is the series_stats function at work
+Perf
+| where TimeGenerated > ago(1d)
+| where CounterName == "Available MBytes"
+| make-series avg(CounterValue) default=0 
+           on TimeGenerated in range(ago(1d), now(), 1h) 
+           by Computer
+| extend mySeriesStats = series_stats_dynamic(avg_CounterValue) 
+| project Computer
+        , mySeriesStats.min
+        , mySeriesStats.min_idx
+        , mySeriesStats.max
+        , mySeriesStats.max_idx
+        , mySeriesStats.avg
+        , mySeriesStats.stdev
+        , mySeriesStats.variance;
+        
+// let's use make series to view memory usage by the hour for the last day
+Perf
+| where TimeGenerated > ago(1d)
+| where CounterName == "Used Memory kBytes" 
+| where CounterValue > 0
+| make-series TotalMemoryUsed=sum(CounterValue) default=0 
+           on TimeGenerated 
+           in range(ago(1d), now(), 1h) 
+           by Computer
+| extend (RSquare,SplitIdx,Variance,RVariance,LineFit)=series_fit_2lines(TotalMemoryUsed)
+| render timechart;
+
+
+// lets look at some of the ML functions
+// this will find the various patterns in the data. Takes awhile to run
+let threshold = 0.03;
+Perf
+| where TimeGenerated >= ago(10d)
+| project Computer
+        , ObjectName 
+        , CounterName
+        , InstanceName  
+| evaluate basket(threshold);
+
+
+// an now use autocluster
+// Like bucket, autocluster has a weight parameter called SizeWeight. 
+// It determines the balance between high coverage (less rows but more
+// focused results) and informative (many shared values)
+// Value is in range of 0-1 with 0.5 being default
+let sizeWeight = 0.03;
+Event
+| where TimeGenerated >= ago(10d)
+| project Source 
+        , EventLog 
+        , Computer 
+        , EventLevelName 
+        , RenderedDescription 
+| evaluate autocluster(sizeWeight);
+
+// reduce finds string patterns, counts the occurances and show a sample
+// this takes A LONG time to run - you may want to limit to 1h interval
+Perf
+| where TimeGenerated >= ago(12h)
+| project Computer 
+| reduce by Computer with threshold = 0.7, characters = '.';
+
+// Let's visualize three counters in a stacked barchart
+Perf 
+| where TimeGenerated >= ago(10d)
+| where CounterName in ('Free Megabytes', '% Processor Time', 'Kerberos Authentications')
+| extend DateGenerated = startofday(TimeGenerated) 
+| summarize Occurences = count() by DateGenerated, Computer, CounterName
+| project DateGenerated, Computer, CounterName, Occurences 
+| render barchart kind = stacked;

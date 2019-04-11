@@ -1,0 +1,249 @@
+// KQL Sample code
+
+// This Sample Code is provided for the purpose of illustration only and is not intended to be used in a production environment.  
+// THIS SAMPLE CODE AND ANY RELATED INFORMATION ARE PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A PARTICULAR PURPOSE.  
+// We grant You a nonexclusive, royalty-free right to use and modify the 
+// Sample Code and to reproduce and distribute the object code form of the Sample Code, provided that You agree: (i) to not use Our name, logo, or trademarks to market Your software product in which the Sample Code is embedded; 
+// (ii) to include a valid copyright notice on Your software product in which the Sample Code is 
+// embedded; and 
+// (iii) to indemnify, hold harmless, and defend Us and Our suppliers from and against any claims or lawsuits, including attorneys’ fees, that arise or result from the use or distribution of the Sample Code.
+// Please note: None of the conditions outlined in the disclaimer above will supercede the terms and conditions contained within the Premier Customer Services Description.
+// 
+
+// This is a metadata query to show information about the StormEvents database
+.show databases datastats ;
+
+.show table StormEvents ;
+
+// just query all the data in the database
+// Not a good idea from performance standpoint
+StormEvents;
+
+// maybe just find out how much data is there
+StormEvents
+| count;
+
+
+// Search operator examples
+// we can search our database for a given value i.e. CA
+// this searches all columns in the given table
+// again not very efficient!
+StormEvents 
+| search "CA";
+
+// So, let's only query a specifc column in our table
+// By default search is not case-sensitive by default
+// Note the use of the double equal sign to mean equals or 
+// here we are limiting our search to the State column
+StormEvents 
+| search "VI*IA";
+
+// Case-sensitive equal operator
+StormEvents 
+| search kind=case_sensitive State  =="CALIFORNIA"
+
+// another way to limit the search to specific tables within our database
+search in (StormEvents , demo_series3 ) "CA";
+
+// logical operators work
+search in (StormEvents , demo_make_series1 ) "CA" or "Windows 8.1"
+| take 50
+
+// another way which is equivalent - start with the table
+
+StormEvents
+| search State =="CA"
+
+// you can search for the exact match by using the == operator
+// you can do sub-string searches by using the : operator
+StormEvents
+| search StormSummary :"hurricane"  ;
+
+// even supports RegEx!!
+StormEvents
+| search EpisodeNarrative matches regex "W[a-z]";
+
+
+// simple where clause
+StormEvents  
+| where StartTime <= ago(365d)
+| take 50;
+
+
+// ago allows for relative date ranges. Ago says "start right now, then go back
+// in time N quantity. These can be expressed using the following abbreviations
+//            d - days
+//            h - hours
+//            m - minutes
+//            s - seconds
+//           ms - milliseconds
+//  microsecond - microseconds
+
+
+StormEvents  
+| where StartTime  <= ago(365d)
+    and State == "CALIFORNIA";
+    
+// note: the difference
+StormEvents  
+| where StartTime  <= ago(365d)
+    and State == "california";
+    
+
+// Can build up the where by adding to it logically
+// Multiple ands are allowed
+StormEvents 
+|where State == "CALIFORNIA"
+    and DeathsDirect  > 1 or
+    (DeathsIndirect >1 or InjuriesIndirect > 1);
+
+
+// You can simulate search using where. Here it searches all columns
+// in the input for the phrase Bytes somewhere in a column's value
+StormEvents  
+| where * has "hail";
+
+StormEvents 
+| where * contains "hail";   // contains and has behave the same
+
+// Similar to search, you can search positional matches
+StormEvents 
+| where * hasprefix "Winter";  // At the start
+
+StormEvents 
+| where * hassuffix "Storm";  // At the end
+
+// Where clause examples
+//execute first two lines, then all three to show how we can 'stack' where clauses
+// first two 4677 rows
+// all three - 1 row
+// time: 0.804 secs
+
+StormEvents
+| where StartTime > datetime(2007-02-01) and StartTime < datetime(2007-03-01)
+| where EventType == 'Flood' and State == 'CALIFORNIA';
+
+// order matters!
+//execute first two lines, then all three to show how we can 'stack' where clauses
+// first two 6 rows
+// all three - 1 row
+// time: about the same!
+StormEvents
+| where EventType == 'Flood' and State == 'CALIFORNIA'
+| where StartTime > datetime(2007-02-01) and StartTime < datetime(2007-03-01);
+
+// Where supports regex as well
+StormEvents 
+| where EpisodeNarrative matches regex "W[a-z]";
+
+// Summarize Operator
+//Produces a table that aggregates the content of the input table. 
+StormEvents
+| summarize count(State) by State ;
+
+// group by state then eventtype
+StormEvents
+| summarize ["Occured in State"] =count() by State, ["Event Type"] =EventType ;
+
+// order matters for output
+StormEvents
+| summarize ["Occured in State"] =count() by  ["Event Type"] =EventType, State ;
+
+// can do avg() and many other aggregate functions
+StormEvents
+| summarize ["Average Deaths in State"] =avg(DeathsDirect) by  ["Event Type"] =EventType, State ;
+
+// Let's clean it up a bit
+StormEvents
+| summarize ["Average Deaths in State"] =avg(DeathsDirect) by  ["Event Type"] =EventType, State 
+| where ['Average Deaths in State'] > 0;
+
+// teaser 
+StormEvents
+| summarize ["Average Deaths in State"] =avg(DeathsDirect) by  ["Event Type"] =EventType, State 
+| where ['Average Deaths in State'] > 0
+| order by ['Average Deaths in State']  desc;
+
+// bin is a great aggregation operator
+StormEvents  
+| summarize Occurances=count() 
+         by bin(StartTime , 30d) ;
+         
+
+// Can bin at multiple levels
+StormEvents  
+| summarize Occurances=count() 
+         by EventType, bin(StartTime , 30d);
+         
+// Can bin at multiple levels in different orders
+StormEvents  
+| summarize Occurances=count() 
+         by  bin(StartTime , 30d), EventType ;
+
+// Can bin at multiple levels
+
+StormEvents  
+| summarize Occurances=count() 
+         by ["Occured in"]=State 
+         ,["Event Type"]=EventType
+          , when=bin(StartTime , 30d)
+| order by ['Occured in']  desc ,when asc,['Event Type']  asc;
+
+// You can bin by values other than dates.
+// Here we see number of entries for each level at 
+// for Deaths Direct
+StormEvents 
+| where DeathsDirect  >0
+| summarize ["Direct Deaths Percentile"]=count() 
+         by bin(DeathsDirect,1)
+| order by DeathsDirect  asc;
+
+//project allows you to decide which columns will be in the output table
+// similar to the SELECT statement in SQL Server
+StormEvents
+| project State,EventType ,DeathsDirect ,DeathsIndirect ,InjuriesDirect ,InjuriesIndirect ;
+
+//project-away passes all columns except those list through to the output
+// useful when you have a large number of columns in the output table but only want to remove a few
+demo_make_series1
+| project Country ,BrowserVer ,OsVer 
+| take 100;
+
+// or just remove TimeStamp
+demo_make_series1
+| project-away TimeStamp 
+| take 100;
+
+// project-rename
+StormEvents 
+| where DeathsDirect  >0
+| summarize ["Direct Deaths Percentile"]=count() 
+         by bin(DeathsDirect,1)
+| order by DeathsDirect  asc
+| project-rename ["Direct Deaths"] = DeathsDirect;
+
+// Extend allows you to calculate new columns based on existing ones
+StormEvents
+| extend StateAndEventType = strcat(State,"-",EventType )
+| project  StateAndEventType, State, DeathsDirect ,DeathsIndirect; 
+
+
+// distinct Produces a table with the distinct combination of the provided columns of the input table. 
+StormEvents
+| distinct State,EventType 
+| order by State asc; 
+
+// distinct can also be used to limit a result set
+StormEvents 
+| where State == "CALIFORNIA"
+| distinct EventType;  
+
+// top - the first N records sorted by the specified columns (can be desc - default or asc)
+StormEvents
+| top 10 by State asc  ; 
+
+// top-nested produces hierarchical results
+StormEvents
+| top-nested 5 of State by sum(BeginLat),
+  top-nested 5 of Source by sum(BeginLat),
+  top-nested 2 of EndLocation by sum(BeginLat);  

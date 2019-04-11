@@ -1,0 +1,128 @@
+// KQL Sample code - Step 7 charts and graphs
+ 
+// This Sample Code is provided for the purpose of illustration only and is not intended to be used in a production environment.  
+// THIS SAMPLE CODE AND ANY RELATED INFORMATION ARE PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A PARTICULAR PURPOSE.  
+// We grant You a nonexclusive, royalty-free right to use and modify the 
+// Sample Code and to reproduce and distribute the object code form of the Sample Code, provided that You agree: (i) to not use Our name, logo, or trademarks to market Your software product in which the Sample Code is embedded; 
+// (ii) to include a valid copyright notice on Your software product in which the Sample Code is 
+// embedded; and 
+// (iii) to indemnify, hold harmless, and defend Us and Our suppliers from and against any claims or lawsuits, including attorneys’ fees, that arise or result from the use or distribution of the Sample Code.
+// Please note: None of the conditions outlined in the disclaimer above will supercede the terms and conditions contained within the Premier Customer Services Description.
+// 
+
+// demo the Home tab visualizations too!
+
+//anomalychart
+let ts=range t from 1 to 24*7*5 step 1 
+| extend Timestamp = datetime(2018-03-01 05:00) + 1h * t 
+| extend y = 2*rand() + iff((t/24)%7>=5, 10.0, 15.0) - (((t%24)/10)*((t%24)/10)) // generate a series with weekly seasonality
+| extend y=iff(t==150 or t==200 or t==780, y-8.0, y) // add some dip outliers
+| extend y=iff(t==300 or t==400 or t==600, y+8.0, y) // add some spike outliers
+| summarize Timestamp=make_list(Timestamp, 10000),y=make_list(y, 10000);
+ts 
+| render anomalychart; 
+
+//areachart
+StormEvents
+| where StartTime > datetime(2007-02-14) and StartTime < datetime(2007-02-21)
+| summarize event_count = count() by bin(StartTime, 1d) ,EventType 
+| project StartTime, event_count,EventType
+| render areachart;
+
+//stackedareachart
+StormEvents
+| where StartTime > datetime(2007-02-14) and StartTime < datetime(2007-02-21)
+| summarize event_count = count() by bin(StartTime, 1d),EventType
+| project StartTime, event_count,EventType
+| render stackedareachart ;
+
+// barchart - LogAnalyitics, bar and column are the same!
+StormEvents 
+| summarize event_count=count(), mid = avg(BeginLat) by State 
+| sort by mid
+| where event_count > 1800
+| project State, event_count
+| render barchart;
+
+// columnchart
+StormEvents 
+| summarize event_count=count(), mid = avg(BeginLat) by State 
+| sort by mid
+| where event_count > 1800
+| project State, event_count
+| render columnchart;
+
+//column chart by hour instead of duration
+StormEvents
+| extend hour= floor( StartTime % 1d , 1h)/ 1h
+| where State in ("GULF OF MEXICO","MAINE","VIRGINIA","WISCONSIN","NORTH DAKOTA","NEW JERSEY","OREGON")
+| summarize event_count=count() by hour, State
+| render columnchart;
+
+//ladderchart
+StormEvents
+| where startofmonth(StartTime) == datetime(2007-05-01) // zoom into a specific month
+| where State == "FLORIDA" // zoom into a specific state
+| summarize min(StartTime), max(EndTime) by EpisodeNarrative
+| extend duration = max_EndTime - min_StartTime
+| top 10 by duration desc // zoom into the longest 10 episodes
+| project-away duration
+| render ladderchart // present the top 10 longest episodes over time across the month of May 2007 in Florida
+
+//linechart
+StormEvents
+| where StartTime > datetime(2007-02-14) and StartTime < datetime(2007-02-21)
+| summarize event_count = count() by bin(StartTime, 1d)
+| render  linechart;
+
+//piechart
+StormEvents
+| where StartTime > datetime(2007-02-14) and StartTime < datetime(2007-02-21)
+| summarize event_count = count() by bin(StartTime, 2d),EventType
+| project EventType,event_count
+| take 20
+| render piechart;
+
+//pivotchart
+StormEvents
+| project State, EventType 
+| summarize count() by State, EventType
+| order by State asc,EventType asc
+| render pivotchart;
+
+//scatterchart
+StormEvents
+| where StartTime > datetime(2007-02-14) and StartTime < datetime(2007-02-21)
+| summarize event_count = count() by bin(StartTime, 1d),EventType, StartTime
+| render scatterchart;
+
+// timechart
+StormEvents
+| summarize event_count=count() by bin(StartTime, 1d)
+| render timechart;
+
+StormEvents
+| extend hour= floor( StartTime % 1d , 1h)
+| where State in ("GULF OF MEXICO","MAINE","VIRGINIA","WISCONSIN","NORTH DAKOTA","NEW JERSEY","OREGON")
+| summarize event_count=count() by hour, State
+| render timechart;
+
+StormEvents 
+| where StartTime > datetime(2007-06-04) and StartTime < datetime(2007-06-10) 
+| where Source in ("Source","Public","Emergency Manager","Trained Spotter","Law Enforcement")
+| summarize count() by bin(StartTime, 10h), Source
+|render timechart with (series=Source);
+
+//timeline
+StormEvents
+| where StartTime > datetime(2007-02-14) and StartTime < datetime(2007-02-28)
+| summarize event_count = count() by bin(StartTime, 1d), StartTime, EventType,EndTime,State
+| project StartTime, EndTime,event_count,EventType,State
+| render timeline;
+
+//timepivot
+StormEvents 
+| where StartTime > datetime(2007-06-04) and StartTime < datetime(2007-06-10) 
+| where Source in ("Source","Public","Emergency Manager","Trained Spotter","Law Enforcement")
+| summarize count() by bin(StartTime, 10h), Source, EventType,State
+| render timepivot ; 

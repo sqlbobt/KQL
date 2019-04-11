@@ -1,0 +1,191 @@
+// KQL Sample code - Step 5 Time series reporting
+ 
+// This Sample Code is provided for the purpose of illustration only and is not intended to be used in a production environment.  
+// THIS SAMPLE CODE AND ANY RELATED INFORMATION ARE PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A PARTICULAR PURPOSE.  
+// We grant You a nonexclusive, royalty-free right to use and modify the 
+// Sample Code and to reproduce and distribute the object code form of the Sample Code, provided that You agree: (i) to not use Our name, logo, or trademarks to market Your software product in which the Sample Code is embedded; 
+// (ii) to include a valid copyright notice on Your software product in which the Sample Code is 
+// embedded; and 
+// (iii) to indemnify, hold harmless, and defend Us and Our suppliers from and against any claims or lawsuits, including attorneys’ fees, that arise or result from the use or distribution of the Sample Code.
+// Please note: None of the conditions outlined in the disclaimer above will supercede the terms and conditions contained within the Premier Customer Services Description.
+// 
+
+
+// basket
+// Basket finds all frequent patterns of discrete attributes (dimensions) in the data 
+StormEvents 
+| where monthofyear(StartTime) == 5
+| extend Damage = iff(DamageCrops + DamageProperty > 0 , "YES" , "NO")
+| project State, EventType, Damage
+| evaluate basket(0.2);
+
+// you can use a column to 'weight' the results
+// here the weighting column is not useful
+StormEvents 
+| where monthofyear(StartTime) == 5
+| extend Damage = iff(DamageCrops + DamageProperty > 0 , "YES" , "NO")
+| project State, EventType, Damage, DamageCrops
+| evaluate basket(0.2, DamageCrops);
+
+// Here, we'll create custom wildcards
+StormEvents 
+| where monthofyear(StartTime) == 5
+| extend Damage = iff(DamageCrops + DamageProperty > 0 , "YES" , "NO")
+| project State, EventType, Damage, DamageCrops
+| evaluate basket(0.005, '~', '~', '???', int(-1));
+
+
+// Autocluster
+StormEvents 
+| where monthofyear(StartTime) == 5
+| extend Damage = iff(DamageCrops + DamageProperty > 0 , "YES" , "NO")
+| project State , EventType , Damage
+| evaluate autocluster(0.006);
+
+//changing the weight will cause more or less clusters
+StormEvents 
+| where monthofyear(StartTime) == 5
+| extend Damage = iff(DamageCrops + DamageProperty > 0 , "YES" , "NO")
+| project State , EventType , Damage
+| evaluate autocluster(0.2);
+
+
+//Autocluster with custom wildcards
+StormEvents 
+| where monthofyear(StartTime) == 5
+| extend Damage = iff(DamageCrops + DamageProperty > 0 , "YES" , "NO")
+| project State , EventType , Damage 
+| evaluate autocluster(0.6, '~', '~', '*');
+
+// more real-world
+Event | take 100000
+// We will reduce the Text column which includes random GUIDs.
+// As random GUIDs interfere with the reduce operation, replace them all
+// by the string "GUID".
+| extend EventData=replace(@"[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}", @"GUID", EventData)
+// Now perform the reduce. In case there are other "quasi-random" identifiers with embedded '-'
+// or '_' characters in them, treat these as non-term-breakers.
+| evaluate autocluster(0.2,'~','~','*');
+
+// diffpattern used to the percent differences between two sets
+StormEvents 
+| where monthofyear(StartTime) == 5
+| extend Damage = iff(DamageCrops + DamageProperty > 0 , 1 , 0)
+| project State , EventType , Source , Damage, DamageCrops
+| evaluate diffpatterns(Damage, "0", "1" );
+
+
+//reduce
+range x from 1 to 1000 step 1
+| project MyText = strcat("MachineLearningX", tostring(toint(rand(10))))
+| reduce by MyText  with threshold=0.001 , characters = "X"; 
+
+// show source of pattern
+range x from 1 to 1000 step 1
+| project MyText = strcat("MachineLearningX", tostring(toint(rand(10))))
+| reduce kind= source by MyText  with threshold=0.001 , characters = "X"; 
+
+
+//let's get some other patterns
+let x =
+range x from 1 to 1000 step 1
+| project MyText = strcat("MachineLearningX",tostring(toint(rand(10))));
+let y = 
+range y from 1 to 1000 step 1
+| project MyText = strcat("SampleCode",tostring(toint(rand(10))));
+x 
+| union y
+| reduce by MyText with threshold=0.1;
+
+//https://portal.loganalytics.io/demo
+// Start with a few records from the Trace table.
+Event | take 10000
+// We will reduce the Text column which includes random GUIDs.
+// As random GUIDs interfere with the reduce operation, replace them all
+// by the string "GUID".
+| extend EventData=replace(@"[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}", @"GUID", EventData)
+// Now perform the reduce. In case there are other "quasi-random" identifiers with embedded '-'
+// or '_' characters in them, treat these as non-term-breakers.
+| reduce by EventData with characters="-_";
+
+// plugins
+
+// activity_metrics
+// Generate random data of user activities
+let _start = datetime(2017-01-02);
+let _end = datetime(2017-05-31);
+range _day from _start to _end  step 1d
+| extend d = tolong((_day - _start)/1d)
+| extend r = rand()+1
+| extend _users=range(tolong(d*50*r), tolong(d*50*r+200*r-1), 1) 
+| mv-expand id=_users to typeof(long) limit 1000000
+// 
+| evaluate activity_metrics(['id'], _day, _start, _end, 7d)
+| project _day, retention_rate, churn_rate
+| render timechart
+
+// activity_count_metris
+let start=datetime(2017-08-01);
+let end=datetime(2017-08-04);
+let window=1d;
+let T = datatable(UserId:string, Timestamp:datetime)
+[
+'A', datetime(2017-08-01),
+'D', datetime(2017-08-01), 
+'J', datetime(2017-08-01),
+'B', datetime(2017-08-01),
+'C', datetime(2017-08-02),  
+'T', datetime(2017-08-02),
+'J', datetime(2017-08-02),
+'H', datetime(2017-08-03),
+'T', datetime(2017-08-03),
+'T', datetime(2017-08-03),
+'J', datetime(2017-08-03),
+'B', datetime(2017-08-03),
+'S', datetime(2017-08-03),
+'S', datetime(2017-08-04),
+];
+ T 
+ | evaluate activity_counts_metrics(UserId, Timestamp, start, end, window)
+
+//siding_window_counts
+// returns each dimension with the count and distinct count in the lookback period
+let start = datetime(2017 - 08 - 01);
+let end = datetime(2017 - 08 - 07); 
+let lookbackWindow = 3d;  
+let bin = 1d;
+let T = datatable(UserId:string, Timestamp:datetime)
+[
+'Bob',      datetime(2017 - 08 - 01), 
+'David',    datetime(2017 - 08 - 01), 
+'David',    datetime(2017 - 08 - 01), 
+'John',     datetime(2017 - 08 - 01), 
+'Bob',      datetime(2017 - 08 - 01), 
+'Ananda',   datetime(2017 - 08 - 02),  
+'Atul',     datetime(2017 - 08 - 02), 
+'John',     datetime(2017 - 08 - 02), 
+'Ananda',   datetime(2017 - 08 - 03), 
+'Atul',     datetime(2017 - 08 - 03), 
+'Atul',     datetime(2017 - 08 - 03), 
+'John',     datetime(2017 - 08 - 03), 
+'Bob',      datetime(2017 - 08 - 03), 
+'Betsy',    datetime(2017 - 08 - 04), 
+'Bob',      datetime(2017 - 08 - 05), 
+];
+T | evaluate sliding_window_counts(UserId, Timestamp, start, end, lookbackWindow, bin)
+
+//funnel_sequence
+// great for a sankey diagram - so we can export to power bi to visualize
+// Looking on StormEvents statistics: 
+// Q1: What happens before Tornado event?
+// Q2: What happens after Tornado event?
+// produces three results
+// 1. prev-seq-next dcount
+// 2. prev-seq dcount (transitions)
+// 3. sequence next dcount
+StormEvents
+| evaluate funnel_sequence(EpisodeId, StartTime, datetime(2007-01-01), datetime(2008-01-01), 1d,365d, EventType, dynamic(['Tornado']));
+
+
+
+  
